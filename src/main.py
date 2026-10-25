@@ -59,6 +59,7 @@ from .config import (
     Settings,
     load_settings,
     validate_codearts_endpoint_allowed,
+    validate_minimax_endpoint_allowed,
     validate_zcode_endpoint_allowed,
     validate_codebuddy_intl_endpoint_allowed,
     validate_endpoint_allowed,
@@ -106,6 +107,9 @@ from .provider.qoder.auth import QoderOAuth
 from .provider.qoder.client import QoderClient
 from .provider.qoder.events import detect_realm_from_domain
 from .provider.trae.client import TraeClient, TraeProvider
+from .provider.minimax import MinimaxProvider
+from .provider.minimax.auth import MinimaxOAuth
+from .provider.minimax.client import MinimaxClient
 from .provider.zcode import ZcodeProvider
 from .provider.zcode.auth import ZcodeOAuth
 from .provider.zcode.client import ZcodeClient
@@ -233,6 +237,19 @@ def _qoder_gateway(config: Settings) -> str:
                              validator=validate_qoder_endpoint_allowed,
                              env_name="QODER_GATEWAY_ENDPOINT",
                              allowed_name="QODER_ALLOWED_ENDPOINTS")
+
+
+def _minimax_hosts(config: Settings) -> tuple[str, str]:
+    """解析 MiniMax 业务/账号域并强制白名单校验（两 host 不可混用）。"""
+    api = _resolve_endpoint(config, attr="minimax_api_endpoint",
+                            validator=validate_minimax_endpoint_allowed,
+                            env_name="MINIMAX_API_ENDPOINT",
+                            allowed_name="MINIMAX_ALLOWED_ENDPOINTS")
+    account = _resolve_endpoint(config, attr="minimax_account_endpoint",
+                                validator=validate_minimax_endpoint_allowed,
+                                env_name="MINIMAX_ACCOUNT_ENDPOINT",
+                                allowed_name="MINIMAX_ALLOWED_ENDPOINTS")
+    return api, account
 
 
 def _zcode_host(config: Settings) -> str:
@@ -427,6 +444,10 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
     zcode_pacer = Pacer(lambda: runtime.zcode_chat_min_interval,
                         lambda: runtime.zcode_chat_min_interval,
                         allow_concurrent=True)
+    # MiniMax 独立 pacer：真实账号渠道，默认 5s；与其余渠道互不排队。
+    minimax_pacer = Pacer(lambda: runtime.minimax_chat_min_interval,
+                          lambda: runtime.minimax_chat_min_interval,
+                          allow_concurrent=True)
     # 按渠道出站代理：启动期解析一次，装配时注入到各 provider 的
     # httpx client；运行中改值需重启（连接池已建立，见 provider/proxy.py）。
     proxies = parse_provider_proxies(config.provider_proxies, KNOWN_PROVIDERS)
@@ -473,6 +494,11 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
             client=ZcodeClient(host=_zcode_host(config),
                                proxy=proxies.get("zcode")),
             pacer=zcode_pacer),
+        "minimax": MinimaxProvider(
+            client=MinimaxClient(api_host=_minimax_hosts(config)[0],
+                                 account_host=_minimax_hosts(config)[1],
+                                 proxy=proxies.get("minimax")),
+            pacer=minimax_pacer),
     }
     # 默认装配路径（生产）才种子无凭证渠道的虚拟凭证：测试注入自定义 registry
     # 时不应凭空多出一条无对应 provider 的凭证行。
@@ -942,6 +968,12 @@ def _upstream_auth(registry: dict, settings: Settings) -> dict:
         # ZCode 走设备码轮询（服务端中介，无本地回调），poll 轨道即可完成登录。
         flows["zcode"] = ZcodeOAuth(host=zcode_client.host,
                                     proxy=proxies.get("zcode"))
+    minimax = registry.get("minimax")
+    minimax_client = getattr(minimax, "client", None)
+    if minimax_client is not None:
+        # MiniMax 走 OAuth 设备码 + PKCE（账号域 account.minimax.cn，无本地回调）。
+        flows["minimax"] = MinimaxOAuth(account_host=minimax_client.account_host,
+                                        proxy=proxies.get("minimax"))
     return flows
 
 
