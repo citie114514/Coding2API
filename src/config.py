@@ -82,6 +82,14 @@ class Settings(BaseSettings):
         "https://sts.cn-north-4.myhuaweicloud.com,"
         "https://codearts.huaweicloud.com"
     )
+    # Loomy（讯飞）：业务域 loomyad.xunfei.cn 与短信登录账号域
+    # account.xfinfr.com 是两个 host；白名单两个都放。
+    loomy_api_endpoint: str = "https://loomyad.xunfei.cn/api/v1"
+    loomy_account_endpoint: str = "https://account.xfinfr.com"
+    loomy_allowed_endpoints: str = (
+        "https://loomyad.xunfei.cn,https://loomyad.xunfei.cn/api/v1,"
+        "https://account.xfinfr.com"
+    )
     # Raccoon（商汤小浣熊）：OpenAI 协议 + 微信扫码；单 host。
     raccoon_api_endpoint: str = "https://xiaohuanxiong.com"
     raccoon_allowed_endpoints: str = "https://xiaohuanxiong.com"
@@ -244,6 +252,8 @@ class Settings(BaseSettings):
     minimax_chat_min_interval: float = 5
     # Raccoon 聊天最小间隔：真实账号渠道，默认 5s；独立节流器。
     raccoon_chat_min_interval: float = 5
+    # Loomy 聊天最小间隔：真实账号渠道，默认 5s；独立节流器。
+    loomy_chat_min_interval: float = 5
     # officeAce 聊天最小间隔：真实账号渠道（单账号单用户条款），默认 0——
     # 上游没有像 CodeArts 那样「每 60s 最多 3 会话」的硬限，实测并发下
     # 直接放行即可；被限流时走伪 200 的 81111/81114（模型级短冷却），
@@ -413,6 +423,11 @@ class Settings(BaseSettings):
                      if e.strip())
 
     @cached_property
+    def loomy_allowed(self) -> tuple[str, ...]:
+        return tuple(e.strip().rstrip("/") for e in self.loomy_allowed_endpoints.split(",")
+                     if e.strip())
+
+    @cached_property
     def raccoon_allowed(self) -> tuple[str, ...]:
         return tuple(e.strip().rstrip("/") for e in self.raccoon_allowed_endpoints.split(",")
                      if e.strip())
@@ -481,6 +496,11 @@ def validate_kilo_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
 def validate_qoder_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
     """Qoder 端点白名单校验（防把带 COSY 签名的请求发往未授权主机）。"""
     return endpoint.strip().rstrip("/") in settings.qoder_allowed
+
+
+def validate_loomy_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
+    """Loomy 端点白名单校验（业务域与账号域都合法）。"""
+    return endpoint.strip().rstrip("/") in settings.loomy_allowed
 
 
 def validate_raccoon_endpoint_allowed(endpoint: str, settings: Settings) -> bool:

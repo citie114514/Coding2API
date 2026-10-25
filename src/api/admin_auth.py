@@ -286,4 +286,42 @@ def create_router(services: Services) -> APIRouter:
         services.schedule_probe(credential_id)
         return {"status": "success", "credential_id": credential_id}
 
+    # ------------------------------------------------- Loomy 短信登录（三步交互流）
+
+    @router.post("/api/auth/upstream/loomy/sms/send")
+    async def loomy_sms_send(request: Request, payload: dict,
+                             _csrf: None = Depends(csrf_protected),
+                             principal=Depends(principal_from_request)):
+        """下发短信验证码 → {state, message}。
+
+        msgid 藏进不透明 state（自包含、无服务端会话）；手机号格式校验交给
+        上游（透传服务端文案，前端能区分「手机号格式不正确」）。
+        """
+        require_admin(principal)
+        sms = getattr(request.app.state, "loomy_sms", None)
+        if sms is None:
+            raise InvalidRequest("provider 'loomy' is not available")
+        phone = str(payload.get("phone") or "").strip()
+        if not phone:
+            raise InvalidRequest("phone is required")
+        state, message = await sms.send_sms(phone)
+        return {"status": "sent", "state": state, "message": message}
+
+    @router.post("/api/auth/upstream/loomy/sms/verify")
+    async def loomy_sms_verify(request: Request, payload: dict,
+                               _csrf: None = Depends(csrf_protected),
+                               principal=Depends(principal_from_request)):
+        """校验验证码并落库（与 poll 轨道相同的响应形状）。"""
+        require_admin(principal)
+        sms = getattr(request.app.state, "loomy_sms", None)
+        if sms is None:
+            raise InvalidRequest("provider 'loomy' is not available")
+        result = await sms.verify(str(payload.get("state") or ""),
+                                  str(payload.get("code") or "").strip())
+        credential_id = services.credentials.add(
+            provider="loomy", credential_data=result.credential_data,
+            nickname=result.nickname, added_by=principal.username)
+        services.schedule_probe(credential_id)
+        return {"status": "success", "credential_id": credential_id}
+
     return router

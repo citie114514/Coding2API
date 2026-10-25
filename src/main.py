@@ -60,6 +60,7 @@ from .config import (
     load_settings,
     validate_codearts_endpoint_allowed,
     validate_minimax_endpoint_allowed,
+    validate_loomy_endpoint_allowed,
     validate_raccoon_endpoint_allowed,
     validate_zcode_endpoint_allowed,
     validate_codebuddy_intl_endpoint_allowed,
@@ -111,6 +112,9 @@ from .provider.trae.client import TraeClient, TraeProvider
 from .provider.minimax import MinimaxProvider
 from .provider.minimax.auth import MinimaxOAuth
 from .provider.minimax.client import MinimaxClient
+from .provider.loomy import LoomyProvider
+from .provider.loomy.auth import LoomySmsLogin
+from .provider.loomy.client import LoomyClient
 from .provider.raccoon import RaccoonProvider
 from .provider.raccoon.auth import RaccoonOAuth
 from .provider.raccoon.client import RaccoonClient as RaccoonHttpClient
@@ -241,6 +245,19 @@ def _qoder_gateway(config: Settings) -> str:
                              validator=validate_qoder_endpoint_allowed,
                              env_name="QODER_GATEWAY_ENDPOINT",
                              allowed_name="QODER_ALLOWED_ENDPOINTS")
+
+
+def _loomy_hosts(config: Settings) -> tuple[str, str]:
+    """解析 Loomy 业务/账号域并强制白名单校验。"""
+    api = _resolve_endpoint(config, attr="loomy_api_endpoint",
+                            validator=validate_loomy_endpoint_allowed,
+                            env_name="LOOMY_API_ENDPOINT",
+                            allowed_name="LOOMY_ALLOWED_ENDPOINTS")
+    account = _resolve_endpoint(config, attr="loomy_account_endpoint",
+                                validator=validate_loomy_endpoint_allowed,
+                                env_name="LOOMY_ACCOUNT_ENDPOINT",
+                                allowed_name="LOOMY_ALLOWED_ENDPOINTS")
+    return api, account
 
 
 def _raccoon_base(config: Settings) -> str:
@@ -464,6 +481,10 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
     raccoon_pacer = Pacer(lambda: runtime.raccoon_chat_min_interval,
                           lambda: runtime.raccoon_chat_min_interval,
                           allow_concurrent=True)
+    # Loomy 独立 pacer：真实账号渠道，默认 5s；与其余渠道互不排队。
+    loomy_pacer = Pacer(lambda: runtime.loomy_chat_min_interval,
+                        lambda: runtime.loomy_chat_min_interval,
+                        allow_concurrent=True)
     # 按渠道出站代理：启动期解析一次，装配时注入到各 provider 的
     # httpx client；运行中改值需重启（连接池已建立，见 provider/proxy.py）。
     proxies = parse_provider_proxies(config.provider_proxies, KNOWN_PROVIDERS)
@@ -519,12 +540,21 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
             client=RaccoonHttpClient(api_base=_raccoon_base(config),
                                      proxy=proxies.get("raccoon")),
             pacer=raccoon_pacer),
+        "loomy": LoomyProvider(
+            client=LoomyClient(api_base=_loomy_hosts(config)[0],
+                               account_base=_loomy_hosts(config)[1],
+                               proxy=proxies.get("loomy")),
+            pacer=loomy_pacer),
     }
     # 默认装配路径（生产）才种子无凭证渠道的虚拟凭证：测试注入自定义 registry
     # 时不应凭空多出一条无对应 provider 的凭证行。
     if providers is None:
         _seed_zen_credential(credentials)
         _seed_kilo_credential(credentials)
+    # Loomy 短信登录（三步交互流,不走通用 poll 轨道）:挂到 app.state.loomy_sms
+    loomy_entry = registry.get("loomy")
+    loomy_sms = LoomySmsLogin(loomi_client) if (loomi_client := getattr(
+        loomy_entry, "client", None)) is not None else None
     # provider → {小写模型名: 上游原始 id}；api/models.list_models 拉取后就地更新，
     # executor 发请求前把归一名映射回各上游的原始大小写
     model_aliases: dict[str, dict[str, str]] = {}
@@ -784,6 +814,7 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
     app.state.live_events = live_events
     app.state.log_buffer = log_buffer
     app.state.upstream_auth = _upstream_auth(registry, config)
+    app.state.loomy_sms = loomy_sms
     app.state.pending_probes = []
     app.state.model_aliases = model_aliases
     app.state.model_list_cache = model_cache
