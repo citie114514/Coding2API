@@ -1,3 +1,4 @@
+import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { api } from "../api/client";
@@ -14,6 +15,10 @@ const LOGIN_PROVIDERS: Provider[] = [
   "qoder",
   "codearts",
   "officeace",
+  "zcode",
+  "minimax",
+  "raccoon",
+  "loomy",
 ];
 
 type TabValue = "login" | "import";
@@ -76,6 +81,12 @@ export function AddCredentialDialog({
   // CodeArts paste 轨道：授权后把浏览器地址栏里打不开的 127.0.0.1 回调链接粘回来
   const [pasteProvider, setPasteProvider] = useState<Provider | null>(null);
   const [pasteUrl, setPasteUrl] = useState("");
+  // Raccoon 微信扫码：auth_url 是给手机扫的，不开弹窗，就地渲染二维码
+  const [raccoonQr, setRaccoonQr] = useState<{ state: string; url: string } | null>(null);
+  // Loomy 短信登录（三步交互流）：phone → 发码(state) → code → verify
+  const [loomySms, setLoomySms] = useState<{ stage: "phone" | "code"; state?: string } | null>(null);
+  const [loomyPhone, setLoomyPhone] = useState("");
+  const [loomyCode, setLoomyCode] = useState("");
   // JSON 导入（原 ImportPanel 逻辑）
   const [importProvider, setImportProvider] = useState<Provider>("codebuddy");
   const [nickname, setNickname] = useState("");
@@ -112,26 +123,40 @@ export function AddCredentialDialog({
   const startLogin = async (provider: Provider, forceLogin = false) => {
     onError("");
     onNotice("");
+    // Raccoon 的 auth_url 是给**手机微信**扫的，桌面弹窗没有意义 → 不开占位窗。
+    const wantsPopup = provider !== "raccoon";
     // 先同步开一个占位窗口：window.open 若在 await 之后才调用，
     // 会脱离用户手势上下文而被浏览器弹窗拦截。
-    const popup = window.open("", "_blank");
+    const popup = wantsPopup ? window.open("", "_blank") : null;
     if (popup) popup.opener = null;               // 切断对管理台 window 的引用
     try {
       const started = await api.upstreamStart(provider, forceLogin);
       loginStatesRef.current[provider] = started.state;
-      if (!started.auth_url) {
+      // authUrl 提到外层：raccoon 的微信扫码要在下面就地渲染二维码
+      const authUrl = started.auth_url ? safeAuthUrl(started.auth_url) : null;
+      if (!authUrl) {
         popup?.close();                        // 上游没给授权地址：关掉空白占位窗
-      } else {
-        const authUrl = safeAuthUrl(started.auth_url);
-        if (!authUrl) {
-          popup?.close();
+        if (started.auth_url) {
+          // 上游给了地址但过不了 scheme 校验：显式报错（而不是静默没有下文）
           delete loginStatesRef.current[provider];
           onError("授权地址无效，已中止登录。");
           return;
         }
-        if (popup && !popup.closed) popup.location.href = authUrl;
+      } else {
+        if (provider === "raccoon") {
+          // 微信扫码：auth_url 给手机扫，桌面弹窗没有意义 → 关掉占位窗
+          popup?.close();
+        } else if (popup && !popup.closed) {
+          popup.location.href = authUrl;
+        }
       }
       setLoginProviders((previous) => [...new Set([...previous, provider])]);
+
+      if (provider === "raccoon" && authUrl) {
+        // 微信扫码：把 auth_url 就地渲染成二维码（已过 safeAuthUrl scheme 校验）
+        const dataUrl = await QRCode.toDataURL(authUrl, { margin: 1, width: 220 });
+        setRaccoonQr({ state: started.state, url: dataUrl });
+      }
 
       if (started.flow === "callback") {
         // TRAE：浏览器完成授权后 302 回本服务的 /authorize，那里直接落库。
@@ -171,7 +196,9 @@ export function AddCredentialDialog({
         return;
       }
 
-      onNotice("已在新标签页打开授权页，完成后自动检测。");
+      onNotice(provider === "raccoon"
+        ? "请用微信扫描下方二维码完成授权，成功后自动入库。"
+        : "已在新标签页打开授权页，完成后自动检测。");
       const interval = (started.interval ?? 5) * 1000;
       const timer = window.setInterval(async () => {
         try {
@@ -212,6 +239,8 @@ export function AddCredentialDialog({
       setPasteProvider(null);
       setPasteUrl("");
     }
+    if (provider === "raccoon") setRaccoonQr(null);
+    if (provider === "loomy") setLoomySms(null);
     try {
       if (state) await api.upstreamCancel(provider, state).catch(() => undefined);
     } finally {
@@ -239,6 +268,41 @@ export function AddCredentialDialog({
       onImported("登录成功，凭证已保存。");
     } catch (caught) {
       onError(caught instanceof Error ? caught.message : "登录失败，请检查粘贴的链接。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loomySendCode = async () => {
+    onError("");
+    setBusy(true);
+    try {
+      const sent = await api.loomySmsSend(loomyPhone.trim());
+      setLoomySms({ stage: "code", state: sent.state });
+      onNotice(sent.message || "验证码已发送。");
+    } catch (caught) {
+      onError(caught instanceof Error ? caught.message : "验证码发送失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loomyVerify = async () => {
+    if (!loomySms?.state) {
+      onError("登录会话已失效，请重新发送验证码。");
+      return;
+    }
+    onError("");
+    setBusy(true);
+    try {
+      await api.loomySmsVerify(loomySms.state, loomyCode.trim());
+      setLoomySms(null);
+      setLoomyPhone("");
+      setLoomyCode("");
+      onNotice("登录成功，凭证已保存。");
+      onImported("登录成功，凭证已保存。");
+    } catch (caught) {
+      onError(caught instanceof Error ? caught.message : "验证码校验失败");
     } finally {
       setBusy(false);
     }
@@ -334,7 +398,9 @@ export function AddCredentialDialog({
                       variant="primary"
                       data-testid={`start-login-${item}`}
                       disabled={busy}
-                      onClick={() => void startLogin(item)}
+                      onClick={() =>
+                        item === "loomy" ? setLoomySms({ stage: "phone" }) : void startLogin(item)
+                      }
                     >
                       登录 {PROVIDER_LABEL[item]}
                     </Button>
@@ -360,7 +426,9 @@ export function AddCredentialDialog({
               （授权后由 <code>/authorize</code> 直接落库，本对话框轮询凭证列表，
               期间勿关闭对话框）；Qoder 走设备码登录；CodeArts 走 OAuth2 授权码登录
               （授权后把地址栏打不开的 127.0.0.1 回调链接粘回本对话框）；
-              OfficeAce 由云端承接回调（本对话框轮询，多账号请用「换账号」）。
+              OfficeAce 由云端承接回调（本对话框轮询，多账号请用「换账号」）；
+              ZCode / MiniMax 走设备码轮询；Raccoon 用微信扫本对话框里的二维码；
+              Loomy 用短信验证码（点「登录 Loomy」后输入手机号）。
             </p>
             {pasteProvider && (
               <div className="space-y-2" data-testid="paste-callback">
@@ -392,6 +460,103 @@ export function AddCredentialDialog({
                     取消
                   </Button>
                 </div>
+              </div>
+            )}
+            {raccoonQr && (
+              <div className="space-y-2" data-testid="raccoon-qr">
+                <img
+                  src={raccoonQr.url}
+                  alt="Raccoon 微信扫码二维码"
+                  className="mx-auto size-[220px] rounded-lg border border-border bg-white p-1"
+                />
+                <p className="text-center text-xs text-muted-foreground">
+                  请用微信扫描二维码，在微信内完成授权；成功后凭证自动入库。
+                </p>
+                <div className="flex justify-center">
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    data-testid="raccoon-qr-cancel"
+                    onClick={() => void cancelLogin("raccoon")}
+                  >
+                    取消扫码
+                  </Button>
+                </div>
+              </div>
+            )}
+            {loomySms && (
+              <div className="space-y-2" data-testid="loomy-sms">
+                {loomySms.stage === "phone" ? (
+                  <>
+                    <Field label="手机号" htmlFor="loomy-phone-input-el">
+                      <Input
+                        id="loomy-phone-input-el"
+                        data-testid="loomy-phone-input"
+                        inputMode="tel"
+                        value={loomyPhone}
+                        onChange={(event) => setLoomyPhone(event.target.value)}
+                        placeholder="13800000000"
+                      />
+                    </Field>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        data-testid="loomy-sms-send"
+                        disabled={busy || loomyPhone.trim().length === 0}
+                        onClick={() => void loomySendCode()}
+                      >
+                        发送验证码
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        data-testid="loomy-sms-cancel"
+                        onClick={() => {
+                          setLoomySms(null);
+                          setLoomyPhone("");
+                        }}
+                      >
+                        取消
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Field label="短信验证码" htmlFor="loomy-code-input-el">
+                      <Input
+                        id="loomy-code-input-el"
+                        data-testid="loomy-code-input"
+                        inputMode="numeric"
+                        value={loomyCode}
+                        onChange={(event) => setLoomyCode(event.target.value)}
+                        placeholder="6 位验证码"
+                      />
+                    </Field>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        data-testid="loomy-sms-verify"
+                        disabled={busy || loomyCode.trim().length === 0}
+                        onClick={() => void loomyVerify()}
+                      >
+                        完成登录
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        data-testid="loomy-sms-resend"
+                        onClick={() => {
+                          setLoomySms({ stage: "phone" });
+                          setLoomyCode("");
+                        }}
+                      >
+                        重发验证码
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             <div className="border-t border-border pt-3">

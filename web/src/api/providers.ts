@@ -16,6 +16,10 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   qoder: "Qoder",
   codearts: "CodeArts",
   officeace: "OfficeAce",
+  zcode: "ZCode",
+  minimax: "MiniMax",
+  raccoon: "Raccoon",
+  loomy: "Loomy",
 };
 
 /** 模型下拉里的渠道缩写（如 `CB x0.29`）。 */
@@ -28,6 +32,10 @@ export const PROVIDER_ABBR: Record<Provider, string> = {
   qoder: "QD",
   codearts: "CA",
   officeace: "OA",
+  zcode: "ZC",
+  minimax: "MX",
+  raccoon: "RC",
+  loomy: "LM",
 };
 
 /**
@@ -45,6 +53,10 @@ export const PROVIDER_CHART_COLOR: Record<Provider, string> = {
   qoder: "var(--chart-5)",
   codearts: "var(--chart-6)",
   officeace: "var(--chart-8)",
+  zcode: "var(--chart-1)",
+  minimax: "var(--chart-3)",
+  raccoon: "var(--chart-5)",
+  loomy: "var(--chart-7)",
 };
 
 /** 未知渠道（老数据/未来渠道）的兜底色。 */
@@ -67,6 +79,10 @@ export const PROVIDER_ORDER: Provider[] = [
   "qoder",
   "codearts",
   "officeace",
+  "zcode",
+  "minimax",
+  "raccoon",
+  "loomy",
 ];
 
 /** 渠道排序权重；未知渠道排在已知渠道之后。 */

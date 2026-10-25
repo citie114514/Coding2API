@@ -1,3 +1,11 @@
+import IFlyTekCloudColor from "@lobehub/icons/es/IFlyTekCloud/components/Color";
+import IFlyTekCloudMono from "@lobehub/icons/es/IFlyTekCloud/components/Mono";
+import MinimaxColor from "@lobehub/icons/es/Minimax/components/Color";
+import MinimaxMono from "@lobehub/icons/es/Minimax/components/Mono";
+import SenseNovaColor from "@lobehub/icons/es/SenseNova/components/Color";
+import SenseNovaMono from "@lobehub/icons/es/SenseNova/components/Mono";
+import ZhipuColor from "@lobehub/icons/es/Zhipu/components/Color";
+import ZhipuMono from "@lobehub/icons/es/Zhipu/components/Mono";
 import CodeBuddyColor from "@lobehub/icons/es/CodeBuddy/components/Color";
 import CodeBuddyMono from "@lobehub/icons/es/CodeBuddy/components/Mono";
 import HuaweiCloudColor from "@lobehub/icons/es/HuaweiCloud/components/Color";
@@ -26,6 +34,11 @@ const BRAND: Record<string, { Main: BrandComp; Color: BrandComp }> = {
   codearts: { Main: HuaweiCloudMono, Color: HuaweiCloudColor },
   // officeAce 同为华为云产品（AgentArts 办公智能体），沿用母公司图标
   officeace: { Main: HuaweiCloudMono, Color: HuaweiCloudColor },
+  // 扩展分支新增渠道（free-llm-router 移植）
+  zcode: { Main: ZhipuMono, Color: ZhipuColor },
+  minimax: { Main: MinimaxMono, Color: MinimaxColor },
+  raccoon: { Main: SenseNovaMono, Color: SenseNovaColor },
+  loomy: { Main: IFlyTekCloudMono, Color: IFlyTekCloudColor },
 };
 
 /**

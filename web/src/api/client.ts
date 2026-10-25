@@ -204,6 +204,17 @@ export const api = {
       method: "POST",
       ...json({ provider, state, url }),
     }),
+  // Loomy 短信登录（三步交互流，不走通用 poll 轨道）
+  loomySmsSend: (phone: string) =>
+    request<{ status: "sent"; state: string; message: string }>(
+      "/api/auth/upstream/loomy/sms/send",
+      { method: "POST", ...json({ phone }) },
+    ),
+  loomySmsVerify: (state: string, code: string) =>
+    request<{ status: "success"; credential_id: string }>(
+      "/api/auth/upstream/loomy/sms/verify",
+      { method: "POST", ...json({ state, code }) },
+    ),
 
   // ------------------------------------------------------------- API Key
   apiKeys: (sort?: string, order?: string, limit?: number, offset?: number) =>
