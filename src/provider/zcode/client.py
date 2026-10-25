@@ -379,6 +379,10 @@ class ZcodeProvider:
 
     async def checkin(self, credential_data: dict) -> CheckinResult:
         return await self.client.checkin(credential_from(credential_data))
+    def checkin_scope(self, credential_data: dict) -> str:
+        """签到隔离键：渠道|uid（uid 缺失返回空串，调用方回落凭证 ID）。"""
+        uid = credential_from(credential_data).uid
+        return f"zcode|{uid}" if uid else ""
 
     async def aclose(self) -> None:
         await self.client.aclose()

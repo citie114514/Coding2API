@@ -455,6 +455,10 @@ class MinimaxProvider:
 
     async def checkin(self, credential_data: dict) -> CheckinResult:
         return await self.client.checkin(self.credential_from(credential_data))
+    def checkin_scope(self, credential_data: dict) -> str:
+        """签到隔离键：渠道|uid（uid 缺失返回空串，调用方回落凭证 ID）。"""
+        uid = self.credential_from(credential_data).uid
+        return f"minimax|{uid}" if uid else ""
 
     async def refresh(self, credential_data: dict) -> dict:
         """refresh_token grant 续期（RefreshTask 调用约定：async → 新 dict）。"""

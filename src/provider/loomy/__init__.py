@@ -55,6 +55,11 @@ class LoomyProvider:
 
     async def checkin(self, credential_data: dict) -> CheckinResult:
         return await self.client.checkin(self._cred(credential_data))
+    def checkin_scope(self, credential_data: dict) -> str:
+        """签到隔离键：渠道|uid（uid 缺失返回空串，调用方回落凭证 ID）。"""
+        cred = self._cred(credential_data)
+        uid = cred.userid or cred.uid
+        return f"loomy|{uid}" if uid else ""
 
     async def aclose(self) -> None:
         await self.client.aclose()
