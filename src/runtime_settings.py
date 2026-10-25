@@ -194,6 +194,9 @@ HOT_SETTINGS: tuple[HotSetting, ...] = (
     HotSetting("qoder_chat_min_interval", float, "Qoder 聊天最小间隔（秒）",
                "Qoder 真实账号渠道专用节流（默认 5s，0 关闭）。与其余渠道各自"
                "独立，不共享。", minimum=0.0, group="channels"),
+    HotSetting("zcode_chat_min_interval", float, "ZCode 聊天最小间隔（秒）",
+               "ZCode 免费额度通道专用节流（0 关闭，默认）。与其余渠道各自"
+               "独立，不共享。", minimum=0.0, group="channels"),
     HotSetting("codearts_chat_min_interval", float, "CodeArts 聊天最小间隔（秒）",
                "CodeArts 真实账号渠道专用节流（默认 5s，0 关闭）。与其余渠道各自"
                "独立，不共享。", minimum=0.0, group="channels"),
@@ -752,6 +755,10 @@ class RuntimeSettings:
     @property
     def qoder_chat_min_interval(self) -> float:
         return float(self.get("qoder_chat_min_interval"))
+
+    @property
+    def zcode_chat_min_interval(self) -> float:
+        return float(self.get("zcode_chat_min_interval"))
 
     @property
     def officeace_chat_min_interval(self) -> float:

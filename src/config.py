@@ -82,6 +82,10 @@ class Settings(BaseSettings):
         "https://sts.cn-north-4.myhuaweicloud.com,"
         "https://codearts.huaweicloud.com"
     )
+    # ZCode（智谱 zcode.z.ai）：免费额度通道，Anthropic Messages 协议 +
+    # 静态 JWT（无续期端点）。端点白名单只为防误配（请求带 Bearer Token）。
+    zcode_api_endpoint: str = "https://zcode.z.ai"
+    zcode_allowed_endpoints: str = "https://zcode.z.ai"
     # officeAce（华为云果办 / AgentArts）：OAuth + 开通校验走**控制面**
     # `agentarts.{region}.myhuaweicloud.com`；聊天走每账号各自的模型网关
     # `modelgw-XXXX.officeace.{region}.huaweicloud-agentarts.com`，该地址由
@@ -222,6 +226,9 @@ class Settings(BaseSettings):
     qoder_chat_min_interval: float = 5
     # CodeArts 聊天最小间隔：真实账号渠道，默认 5s；独立节流器。
     codearts_chat_min_interval: float = 5
+    # ZCode 聊天最小间隔：免费额度通道（账号级风控为主是并发与风控码），
+    # 默认 0 不节流；独立 pacer 与其余渠道互不排队。
+    zcode_chat_min_interval: float = 0
     # officeAce 聊天最小间隔：真实账号渠道（单账号单用户条款），默认 0——
     # 上游没有像 CodeArts 那样「每 60s 最多 3 会话」的硬限，实测并发下
     # 直接放行即可；被限流时走伪 200 的 81111/81114（模型级短冷却），
@@ -391,6 +398,11 @@ class Settings(BaseSettings):
                      if e.strip())
 
     @cached_property
+    def zcode_allowed(self) -> tuple[str, ...]:
+        return tuple(e.strip().rstrip("/") for e in self.zcode_allowed_endpoints.split(",")
+                     if e.strip())
+
+    @cached_property
     def codearts_allowed(self) -> tuple[str, ...]:
         return tuple(e.strip().rstrip("/") for e in self.codearts_allowed_endpoints.split(",")
                      if e.strip())
@@ -444,6 +456,11 @@ def validate_kilo_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
 def validate_qoder_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
     """Qoder 端点白名单校验（防把带 COSY 签名的请求发往未授权主机）。"""
     return endpoint.strip().rstrip("/") in settings.qoder_allowed
+
+
+def validate_zcode_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
+    """ZCode 端点白名单校验（防把带 Bearer Token 的请求发往未授权主机）。"""
+    return endpoint.strip().rstrip("/") in settings.zcode_allowed
 
 
 def validate_codearts_endpoint_allowed(endpoint: str, settings: Settings) -> bool:

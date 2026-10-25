@@ -59,6 +59,7 @@ from .config import (
     Settings,
     load_settings,
     validate_codearts_endpoint_allowed,
+    validate_zcode_endpoint_allowed,
     validate_codebuddy_intl_endpoint_allowed,
     validate_endpoint_allowed,
     validate_kilo_endpoint_allowed,
@@ -105,6 +106,9 @@ from .provider.qoder.auth import QoderOAuth
 from .provider.qoder.client import QoderClient
 from .provider.qoder.events import detect_realm_from_domain
 from .provider.trae.client import TraeClient, TraeProvider
+from .provider.zcode import ZcodeProvider
+from .provider.zcode.auth import ZcodeOAuth
+from .provider.zcode.client import ZcodeClient
 from .provider.zen.client import ZenClient, ZenProvider
 from .runtime_settings import load_runtime_settings
 from .stats.collector import StatsCollector
@@ -229,6 +233,14 @@ def _qoder_gateway(config: Settings) -> str:
                              validator=validate_qoder_endpoint_allowed,
                              env_name="QODER_GATEWAY_ENDPOINT",
                              allowed_name="QODER_ALLOWED_ENDPOINTS")
+
+
+def _zcode_host(config: Settings) -> str:
+    """解析 ZCode 端点并强制白名单校验。"""
+    return _resolve_endpoint(config, attr="zcode_api_endpoint",
+                             validator=validate_zcode_endpoint_allowed,
+                             env_name="ZCODE_API_ENDPOINT",
+                             allowed_name="ZCODE_ALLOWED_ENDPOINTS")
 
 
 def _codearts_endpoint(config: Settings) -> str:
@@ -411,6 +423,10 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
     officeace_pacer = Pacer(lambda: runtime.officeace_chat_min_interval,
                             lambda: runtime.officeace_chat_min_interval,
                             allow_concurrent=True)
+    # ZCode 独立 pacer：免费额度通道，默认不节流；与其余渠道互不排队。
+    zcode_pacer = Pacer(lambda: runtime.zcode_chat_min_interval,
+                        lambda: runtime.zcode_chat_min_interval,
+                        allow_concurrent=True)
     # 按渠道出站代理：启动期解析一次，装配时注入到各 provider 的
     # httpx client；运行中改值需重启（连接池已建立，见 provider/proxy.py）。
     proxies = parse_provider_proxies(config.provider_proxies, KNOWN_PROVIDERS)
@@ -453,6 +469,10 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
             client=OfficeAceClient(cloud_base=_officeace_endpoint(config),
                                    proxy=proxies.get("officeace")),
             pacer=officeace_pacer),
+        "zcode": ZcodeProvider(
+            client=ZcodeClient(host=_zcode_host(config),
+                               proxy=proxies.get("zcode")),
+            pacer=zcode_pacer),
     }
     # 默认装配路径（生产）才种子无凭证渠道的虚拟凭证：测试注入自定义 registry
     # 时不应凭空多出一条无对应 provider 的凭证行。
@@ -916,6 +936,12 @@ def _upstream_auth(registry: dict, settings: Settings) -> dict:
         # 统计明细的凭证列空白。复用 provider 的签名客户端，不另建连接池。
         flows["codearts"] = CodeArtsOAuth(login, identity_client=client,
                                           proxy=proxies.get("codearts"))
+    zcode = registry.get("zcode")
+    zcode_client = getattr(zcode, "client", None)
+    if zcode_client is not None:
+        # ZCode 走设备码轮询（服务端中介，无本地回调），poll 轨道即可完成登录。
+        flows["zcode"] = ZcodeOAuth(host=zcode_client.host,
+                                    proxy=proxies.get("zcode"))
     return flows
 
 
