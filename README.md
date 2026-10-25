@@ -1,3 +1,25 @@
+# Coding2API · extended-providers 分支
+
+> **本分支（`extended-providers`，fork: [citie114514/Coding2API](https://github.com/citie114514/Coding2API)）在 upstream 基础上新增了 4 个渠道，实现移植自 [XuexGao/free-llm-router](https://github.com/XuexGao/free-llm-router)（Cloudflare Workers 版聚合网关）：**
+>
+> | 渠道 | id | 登录方式 | 余额 | 签到 | 协议 |
+> |---|---|---|---|---|---|
+> | ZCode（智谱） | `zcode` | 设备码轮询（poll 轨道） | ✅ billing/balance | ⚠️ claim 恒索要阿里云 captcha，会如实报出上游拒绝 | Anthropic Messages |
+> | MiniMax Code（中国版） | `minimax` | OAuth 设备码 + PKCE（poll 轨道） | ✅ credit/details | ✅ signin/claim（幂等判据 claim_result） | Anthropic Messages |
+> | Raccoon（商汤小浣熊） | `raccoon` | 微信扫码（管理台内渲染二维码，poll 轨道） | ✅ points/balance | ❌ 每日积分由服务端自动发放，无签到端点 | OpenAI |
+> | Loomy（讯飞） | `loomy` | 短信验证码（管理台内两步表单：发码 → 校验） | ✅ points/records | ✅ points/first-login（触发每日额度重置） | OpenAI |
+>
+> 协议事实与踩坑记录逐条保留在 `src/provider/<id>/` 各模块的文件头注释里；
+> 凭据判别、uid 口径、错误分类均与 free-llm-router 原实现逐字对齐。
+> **配置**：四个新渠道各有 `*_API_ENDPOINT`（+ MiniMax/Loomy 的第二个域名）与
+> `*_ALLOWED_ENDPOINTS` 白名单、`*_CHAT_MIN_INTERVAL` 热更节流项；
+> `PROVIDER_PROXIES` 同样支持这四个渠道名（境外部分按需挂代理）。
+>
+> ⚠️ 这些渠道聚合的是各家 IDE/客户端的赠送额度，属逆向接入，仅供学习研究；
+> 封号风险自担，上游 ToS 是否允许请自行评估。
+
+---
+
 # Coding2API
 
 把 **CodeBuddy**（国内 + 国际）、**TRAE SOLO**、**OpenCode Zen**、**Kilo**、**Qoder**、**CodeArts**、**OfficeAce** 八个上游封装成 OpenAI 兼容 API，提供公共凭证池、统一模型名与调度、按人用量统计。
