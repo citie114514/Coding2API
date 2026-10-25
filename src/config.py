@@ -82,6 +82,9 @@ class Settings(BaseSettings):
         "https://sts.cn-north-4.myhuaweicloud.com,"
         "https://codearts.huaweicloud.com"
     )
+    # Raccoon（商汤小浣熊）：OpenAI 协议 + 微信扫码；单 host。
+    raccoon_api_endpoint: str = "https://xiaohuanxiong.com"
+    raccoon_allowed_endpoints: str = "https://xiaohuanxiong.com"
     # MiniMax Code（中国版）：业务域 agent.minimax.cn 与 OAuth 账号域
     # account.minimax.cn 是**两个 host，不可混用**；白名单两个都放
     # （refresh/登录走账号域，业务走 agent 域）。
@@ -239,6 +242,8 @@ class Settings(BaseSettings):
     zcode_chat_min_interval: float = 0
     # MiniMax 聊天最小间隔：真实账号渠道，默认 5s；独立节流器。
     minimax_chat_min_interval: float = 5
+    # Raccoon 聊天最小间隔：真实账号渠道，默认 5s；独立节流器。
+    raccoon_chat_min_interval: float = 5
     # officeAce 聊天最小间隔：真实账号渠道（单账号单用户条款），默认 0——
     # 上游没有像 CodeArts 那样「每 60s 最多 3 会话」的硬限，实测并发下
     # 直接放行即可；被限流时走伪 200 的 81111/81114（模型级短冷却），
@@ -408,6 +413,11 @@ class Settings(BaseSettings):
                      if e.strip())
 
     @cached_property
+    def raccoon_allowed(self) -> tuple[str, ...]:
+        return tuple(e.strip().rstrip("/") for e in self.raccoon_allowed_endpoints.split(",")
+                     if e.strip())
+
+    @cached_property
     def minimax_allowed(self) -> tuple[str, ...]:
         return tuple(e.strip().rstrip("/") for e in self.minimax_allowed_endpoints.split(",")
                      if e.strip())
@@ -471,6 +481,11 @@ def validate_kilo_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
 def validate_qoder_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
     """Qoder 端点白名单校验（防把带 COSY 签名的请求发往未授权主机）。"""
     return endpoint.strip().rstrip("/") in settings.qoder_allowed
+
+
+def validate_raccoon_endpoint_allowed(endpoint: str, settings: Settings) -> bool:
+    """Raccoon 端点白名单校验（防把带 Bearer Token 的请求发往未授权主机）。"""
+    return endpoint.strip().rstrip("/") in settings.raccoon_allowed
 
 
 def validate_minimax_endpoint_allowed(endpoint: str, settings: Settings) -> bool:

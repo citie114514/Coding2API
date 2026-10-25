@@ -60,6 +60,7 @@ from .config import (
     load_settings,
     validate_codearts_endpoint_allowed,
     validate_minimax_endpoint_allowed,
+    validate_raccoon_endpoint_allowed,
     validate_zcode_endpoint_allowed,
     validate_codebuddy_intl_endpoint_allowed,
     validate_endpoint_allowed,
@@ -110,6 +111,9 @@ from .provider.trae.client import TraeClient, TraeProvider
 from .provider.minimax import MinimaxProvider
 from .provider.minimax.auth import MinimaxOAuth
 from .provider.minimax.client import MinimaxClient
+from .provider.raccoon import RaccoonProvider
+from .provider.raccoon.auth import RaccoonOAuth
+from .provider.raccoon.client import RaccoonClient as RaccoonHttpClient
 from .provider.zcode import ZcodeProvider
 from .provider.zcode.auth import ZcodeOAuth
 from .provider.zcode.client import ZcodeClient
@@ -237,6 +241,14 @@ def _qoder_gateway(config: Settings) -> str:
                              validator=validate_qoder_endpoint_allowed,
                              env_name="QODER_GATEWAY_ENDPOINT",
                              allowed_name="QODER_ALLOWED_ENDPOINTS")
+
+
+def _raccoon_base(config: Settings) -> str:
+    """解析 Raccoon 端点并强制白名单校验。"""
+    return _resolve_endpoint(config, attr="raccoon_api_endpoint",
+                             validator=validate_raccoon_endpoint_allowed,
+                             env_name="RACCOON_API_ENDPOINT",
+                             allowed_name="RACCOON_ALLOWED_ENDPOINTS")
 
 
 def _minimax_hosts(config: Settings) -> tuple[str, str]:
@@ -448,6 +460,10 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
     minimax_pacer = Pacer(lambda: runtime.minimax_chat_min_interval,
                           lambda: runtime.minimax_chat_min_interval,
                           allow_concurrent=True)
+    # Raccoon 独立 pacer：真实账号渠道，默认 5s；与其余渠道互不排队。
+    raccoon_pacer = Pacer(lambda: runtime.raccoon_chat_min_interval,
+                          lambda: runtime.raccoon_chat_min_interval,
+                          allow_concurrent=True)
     # 按渠道出站代理：启动期解析一次，装配时注入到各 provider 的
     # httpx client；运行中改值需重启（连接池已建立，见 provider/proxy.py）。
     proxies = parse_provider_proxies(config.provider_proxies, KNOWN_PROVIDERS)
@@ -499,6 +515,10 @@ def build_app(settings: Settings | None = None, *, providers: dict | None = None
                                  account_host=_minimax_hosts(config)[1],
                                  proxy=proxies.get("minimax")),
             pacer=minimax_pacer),
+        "raccoon": RaccoonProvider(
+            client=RaccoonHttpClient(api_base=_raccoon_base(config),
+                                     proxy=proxies.get("raccoon")),
+            pacer=raccoon_pacer),
     }
     # 默认装配路径（生产）才种子无凭证渠道的虚拟凭证：测试注入自定义 registry
     # 时不应凭空多出一条无对应 provider 的凭证行。
@@ -974,6 +994,13 @@ def _upstream_auth(registry: dict, settings: Settings) -> dict:
         # MiniMax 走 OAuth 设备码 + PKCE（账号域 account.minimax.cn，无本地回调）。
         flows["minimax"] = MinimaxOAuth(account_host=minimax_client.account_host,
                                         proxy=proxies.get("minimax"))
+    raccoon = registry.get("raccoon")
+    if raccoon is not None:
+        # Raccoon 走微信扫码轮询（code 客户端自造，服务端只做状态查询）。
+        flows["raccoon"] = RaccoonOAuth(
+            client=RaccoonHttpClient(api_base=_raccoon_base(config),
+                                     proxy=proxies.get("raccoon")),
+            proxy=proxies.get("raccoon"))
     return flows
 
 

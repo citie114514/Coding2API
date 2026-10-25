@@ -194,6 +194,9 @@ HOT_SETTINGS: tuple[HotSetting, ...] = (
     HotSetting("qoder_chat_min_interval", float, "Qoder 聊天最小间隔（秒）",
                "Qoder 真实账号渠道专用节流（默认 5s，0 关闭）。与其余渠道各自"
                "独立，不共享。", minimum=0.0, group="channels"),
+    HotSetting("raccoon_chat_min_interval", float, "Raccoon 聊天最小间隔（秒）",
+               "Raccoon 真实账号渠道专用节流（默认 5s，0 关闭）。与其余渠道各自"
+               "独立，不共享。", minimum=0.0, group="channels"),
     HotSetting("minimax_chat_min_interval", float, "MiniMax 聊天最小间隔（秒）",
                "MiniMax 真实账号渠道专用节流（默认 5s，0 关闭）。与其余渠道各自"
                "独立，不共享。", minimum=0.0, group="channels"),
@@ -766,6 +769,10 @@ class RuntimeSettings:
     @property
     def minimax_chat_min_interval(self) -> float:
         return float(self.get("minimax_chat_min_interval"))
+
+    @property
+    def raccoon_chat_min_interval(self) -> float:
+        return float(self.get("raccoon_chat_min_interval"))
 
     @property
     def officeace_chat_min_interval(self) -> float:
