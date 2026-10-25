@@ -998,7 +998,7 @@ def _upstream_auth(registry: dict, settings: Settings) -> dict:
     if raccoon is not None:
         # Raccoon 走微信扫码轮询（code 客户端自造，服务端只做状态查询）。
         flows["raccoon"] = RaccoonOAuth(
-            client=RaccoonHttpClient(api_base=_raccoon_base(config),
+            client=RaccoonHttpClient(api_base=_raccoon_base(settings),
                                      proxy=proxies.get("raccoon")),
             proxy=proxies.get("raccoon"))
     return flows
